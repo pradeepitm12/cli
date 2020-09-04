@@ -2741,6 +2741,231 @@ func TestPipelinerunLog_finally_v1beta1(t *testing.T) {
 	test.AssertOutput(t, expected, output)
 }
 
+func TestPipelinerunLog_finally_follow_v1beta1(t *testing.T) {
+	var (
+		pipelineName = "output-pipeline"
+		prName       = "output-pipeline-1"
+		prstart      = clockwork.NewFakeClock()
+		ns           = "namespace"
+
+		task1Name    = "output-task"
+		tr1Name      = "output-task-1"
+		tr1StartTime = prstart.Now().Add(20 * time.Second)
+		tr1Pod       = "output-task-pod-123456"
+		tr1Step1Name = "writefile-step"
+
+		finallyName        = "finally-task"
+		finallyTrName      = "finally-task-1"
+		finallyStartTime   = prstart.Now().Add(30 * time.Second)
+		finallyTrPod       = "finally-task-pod-123456"
+		finallyTrStep1Name = "finally-step"
+	)
+
+	nsList := []*corev1.Namespace{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: ns,
+			},
+		},
+	}
+
+	trs := []*v1beta1.TaskRun{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      tr1Name,
+			},
+			Spec: v1beta1.TaskRunSpec{
+				TaskRef: &v1beta1.TaskRef{
+					Name: task1Name,
+				},
+			},
+			Status: v1beta1.TaskRunStatus{
+				Status: duckv1beta1.Status{
+					Conditions: duckv1beta1.Conditions{
+						{
+							Status: corev1.ConditionTrue,
+							Type:   apis.ConditionSucceeded,
+						},
+					},
+				},
+				TaskRunStatusFields: v1beta1.TaskRunStatusFields{
+					PodName:        tr1Pod,
+					StartTime:      &metav1.Time{Time: tr1StartTime},
+					CompletionTime: nil,
+					Steps: []v1beta1.StepState{
+						{
+							Name: tr1Step1Name,
+							ContainerState: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									Reason: "Completed",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      finallyTrName,
+			},
+			Spec: v1beta1.TaskRunSpec{
+				TaskRef: &v1beta1.TaskRef{
+					Name: finallyName,
+				},
+			},
+			Status: v1beta1.TaskRunStatus{
+				Status: duckv1beta1.Status{
+					Conditions: duckv1beta1.Conditions{
+						{
+							Status: corev1.ConditionTrue,
+							Type:   apis.ConditionSucceeded,
+						},
+					},
+				},
+				TaskRunStatusFields: v1beta1.TaskRunStatusFields{
+					PodName:        finallyTrPod,
+					StartTime:      &metav1.Time{Time: finallyStartTime},
+					CompletionTime: nil,
+					Steps: []v1beta1.StepState{
+						{
+							Name: finallyTrStep1Name,
+							ContainerState: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									Reason: "Completed",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	prs := []*v1beta1.PipelineRun{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      prName,
+				Namespace: ns,
+				Labels:    map[string]string{"tekton.dev/pipeline": prName},
+			},
+			Spec: v1beta1.PipelineRunSpec{
+				PipelineRef: &v1beta1.PipelineRef{
+					Name: pipelineName,
+				},
+			},
+			Status: v1beta1.PipelineRunStatus{
+				Status: duckv1beta1.Status{
+					Conditions: duckv1beta1.Conditions{
+						{
+							Status: corev1.ConditionTrue,
+							Reason: v1beta1.PipelineRunReasonRunning.String(),
+						},
+					},
+				},
+				PipelineRunStatusFields: v1beta1.PipelineRunStatusFields{
+					TaskRuns: map[string]*v1beta1.PipelineRunTaskRunStatus{
+						tr1Name: {
+							PipelineTaskName: task1Name,
+							Status:           &trs[0].Status,
+						},
+						finallyTrName: {
+							PipelineTaskName: finallyName,
+							Status:           &trs[1].Status,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	pps := []*v1beta1.Pipeline{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pipelineName,
+				Namespace: ns,
+			},
+			Spec: v1beta1.PipelineSpec{
+				Tasks: []v1beta1.PipelineTask{
+					{
+						Name: task1Name,
+						TaskRef: &v1beta1.TaskRef{
+							Name: task1Name,
+						},
+					},
+				},
+				Finally: []v1beta1.PipelineTask{
+					{
+						Name: finallyName,
+						TaskRef: &v1beta1.TaskRef{
+							Name: finallyName,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	p := []*corev1.Pod{
+		tb.Pod(tr1Pod,
+			tb.PodNamespace(ns),
+			tb.PodLabel("tekton.dev/task", pipelineName),
+			tb.PodSpec(
+				tb.PodContainer(tr1Step1Name, tr1Step1Name+":latest"),
+			),
+			cb.PodStatus(
+				cb.PodPhase(corev1.PodSucceeded),
+			),
+		),
+		tb.Pod(finallyTrPod,
+			tb.PodNamespace(ns),
+			tb.PodLabel("tekton.dev/task", pipelineName),
+			tb.PodSpec(
+				tb.PodContainer(finallyTrStep1Name, finallyTrStep1Name+":latest"),
+			),
+			cb.PodStatus(
+				cb.PodPhase(corev1.PodSucceeded),
+			),
+		),
+	}
+
+	fakeLogStream := fake.Logs(
+		fake.Task(tr1Pod,
+			fake.Step(tr1Step1Name, "wrote a file1"),
+		),
+		fake.Task(finallyTrPod,
+			fake.Step(finallyTrStep1Name, "Finally"),
+		),
+	)
+
+	cs, _ := test.SeedV1beta1TestData(t, pipelinev1beta1test.Data{PipelineRuns: prs, Pipelines: pps, TaskRuns: trs, Pods: p, Namespaces: nsList})
+	cs.Pipeline.Resources = cb.APIResourceList(versionB1, []string{"task", "taskrun", "pipeline", "pipelinerun"})
+	cs.Kube.Tracker().Add(p[0])
+	tdc := testDynamic.Options{}
+	dc, err := tdc.Client(
+		cb.UnstructuredV1beta1TR(trs[0], versionB1),
+		cb.UnstructuredV1beta1TR(trs[1], versionB1),
+		cb.UnstructuredV1beta1PR(prs[0], versionB1),
+		cb.UnstructuredV1beta1P(pps[0], versionB1),
+	)
+
+	if err != nil {
+		t.Errorf("unable to create dynamic client: %v", err)
+	}
+
+	prlo := logOptsv1beta1(prName, ns, cs, dc, fake.Streamer(fakeLogStream), false, true)
+	output, _ := fetchLogs(prlo)
+
+	expectedLogs := []string{
+		"[output-task : writefile-step] wrote a file1\n",
+		"[finally-task : finally-step] Finally\n",
+	}
+	expected := strings.Join(expectedLogs, "\n") + "\n"
+	test.AssertOutput(t, expected, output)
+}
+
 func logOptsv1aplha1(name string, ns string, cs pipelinetest.Clients, dc dynamic.Interface, streamer stream.NewStreamerFunc, allSteps bool, follow bool, tasks ...string) *options.LogOptions {
 	p := test.Params{
 		Kube:    cs.Kube,
@@ -2760,6 +2985,7 @@ func logOptsv1aplha1(name string, ns string, cs pipelinetest.Clients, dc dynamic
 
 	return &logOptions
 }
+
 func logOptsv1beta1(name string, ns string, cs pipelinev1beta1test.Clients, dc dynamic.Interface, streamer stream.NewStreamerFunc, allSteps bool, follow bool, tasks ...string) *options.LogOptions {
 	p := test.Params{
 		Kube:    cs.Kube,

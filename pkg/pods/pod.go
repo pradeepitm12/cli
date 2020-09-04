@@ -71,9 +71,11 @@ func NewWithDefaults(name, ns string, client k8s.Interface) *Pod {
 //Wait wait for the pod to get up and running
 func (p *Pod) Wait() (*corev1.Pod, error) {
 	// ensure pod exists before we actually check for it
-	if _, err := p.Get(); err != nil {
+	pkPod, err := p.Get()
+	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("\n\n\n ******\n %+v \n*****\n\n %+v",pkPod)
 
 	stopC := make(chan struct{})
 	eventC := make(chan interface{})
@@ -83,7 +85,7 @@ func (p *Pod) Wait() (*corev1.Pod, error) {
 	p.watcher(stopC, eventC)
 
 	var pod *corev1.Pod
-	var err error
+	//var err error
 	for e := range eventC {
 		pod, err = checkPodStatus(e)
 		if pod != nil || err != nil {
