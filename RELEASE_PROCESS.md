@@ -6,6 +6,8 @@
 
 - You need to have your own Kubernetes cluster (e.g. `minikube`, `gcp`, or other means) with Tekton installed.
 
+
+
 - You need to have [these tools](https://github.com/tektoncd/cli/blob/master/tekton/release.sh#L13y) installed locally.
 
 - You will need to have a [GPG key set up](https://help.github.com/en/github/authenticating-to-github/managing-commit-signature-verification) with your git account to push the release branch.
