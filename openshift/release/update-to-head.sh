@@ -6,9 +6,9 @@
 set -e
 REPO_NAME=`basename $(git rev-parse --show-toplevel)`
 
-# Reset release-next to upstream/master.
-git fetch upstream master
-git checkout upstream/master -B release-next
+# Reset release-next to upstream/main.
+git fetch upstream main
+git checkout upstream/main -B release-next
 
 # Update openshift's master and take all needed files from there.
 git fetch openshift master
