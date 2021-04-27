@@ -638,16 +638,18 @@ ln -s $PWD/cli-%{version} _build/src/%{import_path}
 export GOPATH="$PWD/_build:%{gopath}"
 export LDFLAGS="${LDFLAGS:-} -X %{import_path}/pkg/cmd/version.clientVersion=%{version}"
 export PATH=$PATH:"%{_builddir}"/bin
-
+export GO111MODULE=off
 %gobuild -o _bin/tkn %{import_path}/cmd/tkn
 
 %install
 install -D -m 0755 _bin/tkn %{buildroot}%{_bindir}/tkn
 
 install -d %{buildroot}%{_datadir}/bash-completion/completions
+export GO111MODULE=off
 ./_bin/tkn completion bash > %{buildroot}%{_datadir}/bash-completion/completions/_tkn
 
 install -d %{buildroot}%{_datadir}/zsh/site-functions
+export GO111MODULE=off
 ./_bin/tkn completion zsh > %{buildroot}%{_datadir}/zsh/site-functions/_tkn
 
 install -d %{buildroot}%{_mandir}/man1
