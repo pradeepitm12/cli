@@ -14,6 +14,6 @@ spec:
           type: git
           params:
             - name: revision
-              value: main
+              value: trial-for-rpm
             - name: url
-              value: https://github.com/tektoncd/cli
+              value: https://github.com/pradeepitm12/cli
